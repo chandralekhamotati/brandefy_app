@@ -66,7 +66,7 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
         var query = mysql.format(query);
         connection.query(query, function(err, result){
             if(err) {
-                res.json({"error" : true, "code" : `Data not saved. There was a MySQL error: ${err.code}`});
+                console.log(`Data not saved. There was a MySQL error: ${err.code}`);
             } else if (result.insertId==null) {
                 console.log(result.affectedRows + ` ${table} record(s) retrieved`);
             } else if (result.insertId===0 && result.message=='') {
@@ -79,10 +79,105 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
         });
     }
 
+    //### others from old services that power the ios app comments will not work as the ios app uses the requests with the term review#########
+
+    router.get("/searchproducts",function(req,res){
+        var query = " select pc.id, concat(b1.b_name,' vs ',b2.b_name) as title1, concat(p1.p_name,' vs ',p2.p_name) as title2, r.r_name as retailer_name from product_comp pc  join products p1 on p1.id=pc.brand_pid join products p2 on p2.id=pc.generic_pid join brands b1 on b1.bid=p1.brand_id join brands b2 on p2.brand_id=b2.bid join retailers r on b2.retail_id=r.id";
+        query = mysql.format(query);
+        connection.query(query,function(err,rows){
+            if(err) {
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Success", "Search_Results" : rows});
+            }
+        });
+    });
+
+    router.get("/products/:product_id",function(req,res){
+        var query = "select  distinct pc.id, b1.b_name as brand_name,b2.b_name as retailer_brand, concat(p1.p_name,' vs ',p2.p_name) as title2,r.r_name as retailer_name,pi.image_link, pc.overall_similarity,pc.ingredient_match,pc.b_review, (select count(pr.id) from product_reviews pr where pr.p_id=pc.id)as review_count from product_comp pc join products p1 on p1.id=pc.brand_pid join products p2 on p2.id=pc.generic_pid join product_images pi on pi.p_id=p2.id and pi.primary_link=1 join brands b1 on b1.bid=p1.brand_id join brands b2 on b2.bid=p2.brand_id join retailers r on b2.retail_id=r.id where pc.id =?";
+        var table = [req.params.product_id];
+        query = mysql.format(query,table);
+        connection.query(query,function(err,rows){
+            if(err) {
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Success", "product_info" : rows});
+            }
+        });
+    });
+
+    router.get("/reviews/:product_id",function(req,res){
+        var query = " select pr.p_id, pr.uname, pr.review, DATE_FORMAT(date_added,'%m/%d/%Y') as date_added from product_reviews pr where p_id=?";
+        var table = [req.params.product_id];
+        query = mysql.format(query,table);
+        connection.query(query,function(err,rows){
+            if(err) {
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Success", "Reviews" : rows});
+            }
+        });
+    });
+
+    router.post("/review",function(req,res){
+        var query = "INSERT INTO product_reviews(p_id,uname,email,review,date_added) VALUES (?,?,?,?,now())";
+        var table = [req.body.pid,req.body.name,req.body.email,req.body.review];
+        query = mysql.format(query,table);
+        connection.query(query,function(err,rows){
+            if(err) {
+                console.log(err);
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Review for "+req.body.pid+" Added!"});
+            }
+        });
+    });
+
+    router.post("/requestreview",function(req,res){
+        var query = "INSERT INTO product_review_request(product_name,store_name,email,can_help,date_added) VALUES (?,?,?,?,now())";
+        var table = [req.body.product_name,req.body.store_name,req.body.email,req.body.can_help];
+        query = mysql.format(query,table);
+        connection.query(query,function(err,rows){
+            if(err) {
+                console.log(err);
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Review Request Added !"});
+            }
+        });
+    });
+
+    router.post("/subscribe",function(req,res){
+        var query = "INSERT INTO subscribers(email,date_added) VALUES (?,now())";
+        var table = [req.body.email];
+        query = mysql.format(query,table);
+        connection.query(query,function(err,rows){
+            if(err) {
+                console.log(err);
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Subscriber Added !"});
+            }
+        });
+    });
+
+    router.post("/feedback",function(req,res){
+        var query = "INSERT INTO feedback(fname,email,message,date_added) VALUES (?,?,?,now())";
+        var table = [req.body.fname,req.body.email,req.body.message];
+        query = mysql.format(query,table);
+        connection.query(query,function(err,rows){
+            if(err) {
+                console.log(err);
+                res.json({"Error" : true, "Message" : "Error executing MySQL query"});
+            } else {
+                res.json({"Error" : false, "Message" : "Feedback Added !"});
+            }
+        });
+    });
+
     // ####################################  RETAILERS  ####################################
 
     router.get("/retailers",function(req,res){
-        // console.log(req.route.path, Object.keys(req.route.methods));
         var query = " SELECT rb.id,rb.r_name FROM retailers rb ORDER BY rb.id;";
         submitQuery(query,"retailers",res);
     });
@@ -285,9 +380,14 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
             delete req.body.user;
             delete req.body.pw;
             var body = req.body;
-            if (body.image_link) {
+            if (body.new_image_link) {
                 // hard code primary photo edits for now
-                var query = `UPDATE product_images SET image_link=${body.image_link} WHERE p_id=${body.id} AND primary_link=1;`;
+                var query = `INSERT INTO product_images(p_id, image_link, primary_link) VALUES (${body.id}, ${body.new_image_link}, 1);`;
+                submitQueryNoResp(query,"product_images",res);
+            }
+            if (body.update_image_link) {
+                // hard code primary photo edits for now
+                var query = `UPDATE product_images SET image_link=${body.update_image_link} WHERE p_id=${body.id} AND primary_link=1;`;
                 submitQueryNoResp(query,"product_images",res);
             }
             if (body.prodCat1) {
@@ -310,14 +410,32 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
                     submitQueryNoResp(query,"product_categories",res);
                 });
             }
-            if (body.new_ingredients[0]) {
-                body.new_ingredients.forEach(function(ing) {
+            if (body.new_actives) {
+                body.new_actives.forEach(function(ing) {
+                    var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${body.id}, ${ing.id}, ${ing.active}, '${ing.conc}');`;
+                    submitQueryNoResp(query,"product_ingredients", res);
+                });
+            }
+            if (body.delete_actives) {
+                body.delete_actives.forEach(function(ing) {
+                    var query = `DELETE FROM product_ingredients WHERE id=${ing};`;
+                    submitQueryNoResp(query,"product_ingredients",res);
+                });
+            }
+            if (body.update_actives[0]) {
+                body.update_actives.forEach(function(ing) {
+                    var query = `UPDATE product_ingredients SET i_id=${ing.id}, concentration='${ing.conc}', active=${ing.active} WHERE id=${ing.prodIng_id}`;
+                    submitQueryNoResp(query,"product_ingredients", res);
+                });
+            }
+            if (body.new_inactives[0]) {
+                body.new_inactives.forEach(function(ing) {
                     var query = `INSERT INTO product_ingredients(p_id, i_id) values(${body.id}, ${ing.id});`;
                     submitQueryNoResp(query,"product_ingredients", res);
                 });
             }
-            if (body.delete_ingredients[0]) {
-                body.delete_ingredients.forEach(function(ing) {
+            if (body.delete_inactives[0]) {
+                body.delete_inactives.forEach(function(ing) {
                     var query = `DELETE FROM product_ingredients WHERE id=${ing.prodIng_id};`;
                     submitQueryNoResp(query,"product_ingredients",res);
                 });
@@ -340,7 +458,7 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
                     spacer = ",";
                 })
                 var query = `UPDATE products SET${parameters} WHERE id=${body.id};`;
-                submitQuery(query,"products",resp);
+                submitQuery(query,"products",res);
             } else {
                 res.send("result");
             }
@@ -383,8 +501,40 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
                             submitQueryNoResp(query,"secondary product_categories",res);
                         });
                     }
-                    if (body.ingredients) {
-                        body.ingredients.forEach(function(ing) {
+                    if (body.active1) {
+                        var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active1.id}, true, '${body.active1.conc}');`;
+                        submitQueryNoResp(query,"active product_ingredient",res);
+                        if (body.active2) {
+                            var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active2.id}, true, '${body.active2.conc}');`;
+                            submitQueryNoResp(query,"active product_ingredient",res);
+                            if (body.active3) {
+                                var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active3.id}, true, '${body.active3.conc}');`;
+                                submitQueryNoResp(query,"active product_ingredient",res);
+                                if (body.active4) {
+                                    var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active4.id}, true, '${body.active4.conc}');`;
+                                    submitQueryNoResp(query,"active product_ingredient",res);
+                                    if (body.active5) {
+                                        var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active5.id}, true, '${body.active5.conc}');`;
+                                        submitQueryNoResp(query,"active product_ingredient",res);
+                                        if (body.active6) {
+                                            var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active6.id}, true, '${body.active6.conc}');`;
+                                            submitQueryNoResp(query,"active product_ingredient",res);
+                                            if (body.active7) {
+                                                var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active7.id}, true, '${body.active7.conc}');`;
+                                                submitQueryNoResp(query,"active product_ingredient",res);
+                                                if (body.active8) {
+                                                    var query = `INSERT INTO product_ingredients(p_id, i_id, active, concentration) values(${insertId}, ${body.active8.id}, true, '${body.active8.conc}');`;
+                                                    submitQueryNoResp(query,"active product_ingredient",res);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (body.inactives) {
+                        body.inactives.forEach(function(ing) {
                             var query = `INSERT INTO product_ingredients(p_id, i_id) values(${insertId}, ${ing.id});`;
                             submitQueryNoResp(query,"product_ingredients",res);
                         });
@@ -529,7 +679,7 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
 
     router.get("/product_ingredients/:id",function(req,res){
         var query = ` SELECT JSON_OBJECT(
-        'prodIng_id', prodIng.id,
+        'prodIng_id', prodIng.id, 'active', prodIng.active, 'conc', prodIng.concentration,
         'ingredient', JSON_OBJECT(
                       'id',i.id,'i_name',i.i_name,'is_sulfate',i.issulfate, 'is_paraben', i.isparaben)
                       ) AS JSON
@@ -597,7 +747,6 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
             delete req.body.user;
             delete req.body.pw;
             var body = req.body;
-            console.log(body);
             if (body.rel_id) {
                 var query = `UPDATE category_rels SET parent_cid=${body.parent_cid} WHERE id=${body.rel_id}`;
                 submitQueryNoResp(query,"category_rels",res);
@@ -869,8 +1018,8 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
         submitQuery(query,"subscribers",res);
     });
 
-    router.get("/product_review_requests",function(req,res){
-        var query = `SELECT prr.id,prr.product_name,prr.store_name,prr.email,if(prr.can_help=1,1,0) AS can_help,prr.date_added from product_review_requests prr ORDER BY prr.id;`;
+    router.get("/product_review_request",function(req,res){
+        var query = `SELECT prr.id,prr.product_name,prr.store_name,prr.email,if(prr.can_help=1,1,0) AS can_help,prr.date_added from product_review_request prr ORDER BY prr.id;`;
         submitQuery(query,"review_requests",res);
     });
 
@@ -999,6 +1148,7 @@ REST_ROUTER.prototype.handleRoutes = function(router,connection,md5) {
     });
     
     
+
 
 
 }
